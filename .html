@@ -4,7 +4,6 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Pixelletter — Make Your Magical Letters</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323:wght@400&family=Silkscreen:wght@400;700&family=Pixelify+Sans:wght@400;700&family=Orbitron:wght@400;700&family=Space+Mono:wght@400;700&family=Courier+Prime:wght@400;700&family=Josefin+Sans:wght@400;700&family=Playfair+Display:wght@400;700&family=Abril+Fatface&family=Permanent+Marker&family=Caveat:wght@400;700&family=Dancing+Script:wght@400;700&family=Creepster&family=Righteous&display=swap" rel="stylesheet">
 <style>
 :root {
@@ -717,8 +716,7 @@ header {
     <!-- ACTION BUTTONS -->
     <div class="px-panel-dark" style="padding:10px;display:flex;flex-direction:column;gap:6px">
       <button class="px-btn gold lg" onclick="showPreview()" style="width:100%">▶ PREVIEW LETTER</button>
-      <button class="px-btn blue" onclick="generateLink()" style="width:100%">🔗 GENERATE SHARE LINK</button>
-      <button class="px-btn purple" onclick="downloadLetter()" style="width:100%" id="downloadBtn">📷 DOWNLOAD AS IMAGE</button>
+      <button class="px-btn blue" id="generateLinkBtn" onclick="generateLink()" style="width:100%">🔗 GENERATE SHARE LINK</button>
       <button class="px-btn sm red" onclick="clearAll()" style="width:100%">🗑 CLEAR ALL</button>
     </div>
 
@@ -767,7 +765,7 @@ header {
     </div>
     <div id="previewLetter"></div>
     <div style="margin-top:16px">
-      <div style="font-family:'Press Start 2P',monospace;font-size:8px;color:#5aad5a;margin-bottom:8px">🔗 SHARE LINK — click to copy (stored locally):</div>
+      <div style="font-family:'Press Start 2P',monospace;font-size:8px;color:#5aad5a;margin-bottom:8px">🔗 SHAREABLE LINK — works on any device:</div>
       <div class="share-box" id="shareBox" onclick="copyLink()">Generate link first...</div>
     </div>
   </div>
@@ -1801,93 +1799,82 @@ function escHtml(s) {
   return s.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
 }
 
-// ═══════════════════════════════════════════
-//  DOWNLOAD AS IMAGE
-// ═══════════════════════════════════════════
-function downloadLetter() {
-  const paper = document.getElementById('letterPaper');
-  const btn = document.getElementById('downloadBtn');
+// ═══════════════════════════════════════════════════════════════
+//  SUPABASE SHARE SYSTEM — true cross-device sharing
+//  Letters are stored in Supabase (free, up to 500MB).
+//  Anyone can open the link on ANY device, ANY browser.
+//
+//  ── ONE-TIME SETUP (5 min, completely free) ──────────────────
+//  1. Go to https://supabase.com → "Start your project" (free)
+//  2. Create a new project (name/region/password don't matter)
+//  3. Go to Table Editor → + New Table:
+//       Name: letters
+//       Columns:
+//         id         uuid  primary key  default: gen_random_uuid()
+//         data       text  (not null)
+//         created_at timestamptz       default: now()
+//  4. Go to Authentication → Policies → letters table:
+//       + New policy → "Enable insert for everyone" (role: anon)
+//       + New policy → "Enable select for everyone" (role: anon)
+//  5. Go to Project Settings → API:
+//       Copy "Project URL"    → paste as SUPABASE_URL below
+//       Copy "anon / public"  → paste as SUPABASE_ANON_KEY below
+//  6. Save this file and open it. Done — sharing works globally!
+//
+//  ⚠ The anon key is safe to put here — it's intentionally public.
+//    Row Level Security (your insert+select policies) controls access.
+// ═══════════════════════════════════════════════════════════════
 
-  // Temporarily hide sticker controls / delete buttons so they don't appear in the image
-  const toHide = paper.querySelectorAll('.del-btn, .rotate-handle, .sticker-controls, .img-handle, .img-rot-handle, .img-rot-line, .img-selection-box');
-  toHide.forEach(el => el.style.visibility = 'hidden');
-
-  // Deselect active sticker outlines
-  paper.querySelectorAll('.letter-sticker.selected, .img-sticker.img-selected').forEach(el => {
-    el.classList.remove('selected', 'img-selected');
-  });
-
-  const orig = btn.textContent;
-  btn.textContent = '⏳ CAPTURING...';
-  btn.disabled = true;
-
-  html2canvas(paper, {
-    useCORS: true,
-    allowTaint: true,
-    scale: 2,          // 2× for crisp/retina output
-    backgroundColor: null,
-    logging: false,
-  }).then(canvas => {
-    const to = document.getElementById('toField').value.trim();
-    const filename = to ? `letter-to-${to.replace(/\s+/g,'-')}.png` : 'pixelwish-letter.png';
-    const link = document.createElement('a');
-    link.download = filename;
-    link.href = canvas.toDataURL('image/png');
-    link.click();
-    showNotif('Letter downloaded! 🎉');
-  }).catch(err => {
-    console.error('Download error:', err);
-    showNotif('Could not capture letter. Try again.', true);
-  }).finally(() => {
-    // Restore hidden elements
-    toHide.forEach(el => el.style.visibility = '');
-    btn.textContent = orig;
-    btn.disabled = false;
-  });
-}
-
-// ═══════════════════════════════════════════
-//  SHARE — JSONBin.io (cross-device, free)
-//  Letters are stored as public JSON bins.
-//  Recipient opens the link on ANY device.
-// ═══════════════════════════════════════════
-const JSONBIN_API = 'https://api.jsonbin.io/v3/b';  
-// Free-tier master key — create yours free at jsonbin.io
-// Replace this with your own key from https://jsonbin.io/app/app → API Keys
-const JSONBIN_KEY = '$2a$10$Y1h9akGF6UXVamuDWE96/.uBmNlR7NG4aLjRfME8hxhqqrJm341b.'; 
+const SUPABASE_URL      = 'https://jkcsevcikfinxwdawcng.supabase.co';
+const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImprY3NldmNpa2Zpbnh3ZGF3Y25nIiwicm9sZSI6ImFub24iLCJpYXQiOjE3Nzc3NzczNTgsImV4cCI6MjA5MzM1MzM1OH0.dwWdzxnIjokbKZTZ15e9Si65Sg4BDz2LlXm6W5bifys';
 
 async function saveLetter(data) {
-  const res = await fetch(JSONBIN_API, {
+  const res = await fetch(`${SUPABASE_URL}/rest/v1/letters`, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
-      'X-Master-Key': JSONBIN_KEY,
-      'X-Bin-Name': 'pixelwish-' + Date.now(),
-      'X-Bin-Private': 'false',
+      'Content-Type':  'application/json',
+      'apikey':        SUPABASE_ANON_KEY,
+      'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+      'Prefer':        'return=representation',
     },
-    body: JSON.stringify(data),
+    body: JSON.stringify({ data: JSON.stringify(data) }),
   });
-  if (!res.ok) throw new Error('HTTP ' + res.status);
-  const json = await res.json();
-  return json.metadata.id; // bin ID like "64f3a..."
+  if (!res.ok) {
+    const err = await res.text().catch(() => res.status);
+    throw new Error(`Supabase save failed (${res.status}): ${err}`);
+  }
+  const rows = await res.json();
+  if (!rows || !rows[0] || !rows[0].id) throw new Error('No ID returned from Supabase');
+  return rows[0].id; // UUID like "a1b2c3d4-e5f6-..."
 }
 
-async function fetchLetter(binId) {
-  const res = await fetch(JSONBIN_API + '/' + binId + '/latest', {
-    headers: { 'X-Master-Key': JSONBIN_KEY }
-  });
-  if (!res.ok) throw new Error('HTTP ' + res.status);
-  const json = await res.json();
-  return json.record; // the original data object
+async function fetchLetter(id) {
+  const res = await fetch(
+    `${SUPABASE_URL}/rest/v1/letters?id=eq.${encodeURIComponent(id)}&select=data&limit=1`,
+    {
+      headers: {
+        'apikey':        SUPABASE_ANON_KEY,
+        'Authorization': `Bearer ${SUPABASE_ANON_KEY}`,
+      },
+    }
+  );
+  if (!res.ok) throw new Error(`Supabase fetch failed: ${res.status}`);
+  const rows = await res.json();
+  if (!rows || rows.length === 0) throw new Error('Letter not found');
+  return JSON.parse(rows[0].data);
 }
 
 function generateLink() {
+  if (SUPABASE_URL === 'YOUR_SUPABASE_PROJECT_URL') {
+    showNotif('Set up Supabase first! See code comments.', true);
+    return;
+  }
+
   const paper = document.getElementById('letterPaper');
-  const to   = document.getElementById('toField').value;
-  const from = document.getElementById('fromField').value;
+  const to    = document.getElementById('toField').value;
+  const from  = document.getElementById('fromField').value;
   const textContent = document.getElementById('textContent').innerHTML;
 
-  // Collect emoji stickers
   const stickers = [];
   paper.querySelectorAll('.letter-sticker').forEach(s => {
     const span = s.querySelector('span');
@@ -1901,7 +1888,6 @@ function generateLink() {
     });
   });
 
-  // Collect image stickers (base64 src included)
   paper.querySelectorAll('.img-sticker').forEach(s => {
     const img = s.querySelector('img');
     if (!img) return;
@@ -1909,14 +1895,14 @@ function generateLink() {
       type: 'image',
       src: img.src,
       left: s.style.left, top: s.style.top,
-      width: img.style.width || img.offsetWidth + 'px',
+      width:  img.style.width  || img.offsetWidth  + 'px',
       height: img.style.height || img.offsetHeight + 'px',
       rotation: s.dataset.rotation || '0',
     });
   });
 
   const data = {
-    v: 4,
+    v: 5,
     to, from, textContent,
     theme: currentTheme,
     border: borderStyle,
@@ -1926,151 +1912,116 @@ function generateLink() {
     bgStyle: paper.getAttribute('style') || '',
   };
 
-  // Check size — JSONBin free tier allows up to 100KB per bin
   const json = JSON.stringify(data);
-  const kb = (json.length / 1024).toFixed(1);
-  if (json.length > 100 * 1024) {
-    showNotif(`Letter too large (${kb}KB). Reduce image sizes.`, true);
+  const mb = (json.length / 1024 / 1024).toFixed(1);
+  if (json.length > 5 * 1024 * 1024) {
+    showNotif(`Letter too large (${mb}MB). Try smaller images.`, true);
     return;
   }
 
-  // Show loading state on the button
-  const btn = document.querySelector('button[onclick="generateLink()"]');
-  const orig = btn ? btn.textContent : '';
+  const btn = document.getElementById('generateLinkBtn');
   if (btn) { btn.textContent = '⏳ SAVING...'; btn.disabled = true; }
+  showNotif('Saving letter... ✨');
 
-  saveLetter(data).then(binId => {
-    const url = window.location.origin + window.location.pathname + '?id=' + binId;
+  saveLetter(data).then(id => {
+    const url = window.location.origin + window.location.pathname + '?id=' + id;
     shareLink = url;
     document.getElementById('shareBox').textContent = url;
-    if (btn) { btn.textContent = orig; btn.disabled = false; }
+    if (btn) { btn.textContent = '🔗 GENERATE SHARE LINK'; btn.disabled = false; }
     copyLink();
     showPreview();
   }).catch(err => {
     console.error('Save error:', err);
-    if (btn) { btn.textContent = orig; btn.disabled = false; }
-    showNotif('Could not save letter. Check your JSONBin API key.', true);
+    if (btn) { btn.textContent = '🔗 GENERATE SHARE LINK'; btn.disabled = false; }
+    showNotif('Save failed! Check Supabase setup in code.', true);
   });
 }
 
 function copyLink() {
   if (!shareLink) { showNotif('Generate a link first!', true); return; }
   navigator.clipboard.writeText(shareLink).then(() => {
-    showNotif('Link copied to clipboard! 🎉');
+    showNotif('Link copied! Share it with anyone 🎉');
   }).catch(() => {
     const t = document.getElementById('shareBox');
     const range = document.createRange();
     range.selectNode(t);
     window.getSelection().removeAllRanges();
     window.getSelection().addRange(range);
-    showNotif('Select the link and copy manually!');
+    showNotif('Select the link above and copy manually!');
   });
 }
 
-function clearAll() {
-  if (!confirm('Clear everything and start fresh?')) return;
-  document.getElementById('textContent').innerHTML = 'Write your magical letter here... ✨';
-  document.querySelectorAll('.letter-sticker, .letter-img, .img-sticker').forEach(el => el.remove());
-  document.getElementById('toField').value = '';
-  document.getElementById('fromField').value = '';
-  shareLink = '';
-  selectedSticker = null;
-  selectedImgSticker = null;
-}
-
-function showNotif(msg, isError) {
-  const n = document.getElementById('notif');
-  n.textContent = msg;
-  n.className = 'notif' + (isError ? ' error' : '');
-  n.style.display = 'block';
-  clearTimeout(window._notifTimer);
-  window._notifTimer = setTimeout(() => { n.style.display = 'none'; }, 3000);
-}
-
-// ═══════════════════════════════════════════
-//  LOAD FROM ?id= PARAM  (JSONBin — cross-device)
-// ═══════════════════════════════════════════
+// ─────────────────────────────────────────────────────────────────
+//  READ-ONLY LETTER VIEW  (rendered when ?id= is in the URL)
+// ─────────────────────────────────────────────────────────────────
 function renderLetterView(data) {
-  // ── RENDER READ-ONLY LETTER VIEW ──
   document.body.innerHTML = '';
-  document.body.style.cssText = 'margin:0;padding:0;background:#1a0f05;min-height:100vh;display:flex;flex-direction:column;align-items:center;font-family:\'Press Start 2P\',monospace';
+  document.body.style.cssText = "margin:0;padding:0;background:#1a0f05;min-height:100vh;display:flex;flex-direction:column;align-items:center;font-family:'Press Start 2P',monospace";
 
   // Header
   const hdr = document.createElement('div');
   hdr.style.cssText = 'text-align:center;padding:24px 16px 12px;width:100%';
-  hdr.innerHTML = `<div style="font-size:clamp(16px,3vw,28px);color:#f9c22b;text-shadow:4px 4px 0 #c49a1b,8px 8px 0 #000;letter-spacing:2px">✉ PixelWish ✉</div>
-    <div style="font-family:VT323,monospace;font-size:18px;color:#a0d8a0;margin-top:6px">► A magical letter, just for you ◄</div>`;
+  hdr.innerHTML = `
+    <div style="font-size:clamp(16px,3vw,28px);color:#f9c22b;text-shadow:4px 4px 0 #c49a1b,8px 8px 0 #000;letter-spacing:2px;animation:pixelPulse 2s ease-in-out infinite">✉ PixelLetter ✉</div>
+    <div style="font-family:'VT323',monospace;font-size:20px;color:#a0d8a0;margin-top:6px">► A magical letter, crafted just for you ◄</div>
+    <style>@keyframes pixelPulse{0%,100%{text-shadow:4px 4px 0 #c49a1b,8px 8px 0 #000}50%{text-shadow:4px 4px 0 #c49a1b,8px 8px 0 #000,0 0 20px #f9c22b}}</style>`;
   document.body.appendChild(hdr);
 
-  // To / From bar
+  // To/From bar
   const toFrom = document.createElement('div');
-  toFrom.style.cssText = 'background:#3d2e1e;border:4px solid #000;box-shadow:4px 4px 0 #000;padding:10px 18px;margin:0 16px 12px;display:flex;gap:16px;align-items:center;flex-wrap:wrap;max-width:860px;width:calc(100% - 32px)';
-  toFrom.innerHTML = `<span style="font-size:7px;color:#888">TO:</span><span style="font-family:VT323,monospace;font-size:20px;color:#e0d4b8">${escHtml(data.to||'')}</span>
+  toFrom.style.cssText = 'background:#3d2e1e;border:4px solid #000;box-shadow:4px 4px 0 #000;padding:10px 18px;margin:0 16px 12px;display:flex;gap:16px;align-items:center;flex-wrap:wrap;max-width:960px;width:calc(100% - 32px)';
+  toFrom.innerHTML = `
+    <span style="font-size:7px;color:#888">TO:</span>
+    <span style="font-family:'VT323',monospace;font-size:22px;color:#e0d4b8">${escHtml(data.to || '—')}</span>
     <span style="color:#6e5a3e;margin:0 4px">·</span>
-    <span style="font-size:7px;color:#888">FROM:</span><span style="font-family:VT323,monospace;font-size:20px;color:#e0d4b8">${escHtml(data.from||'')}</span>`;
+    <span style="font-size:7px;color:#888">FROM:</span>
+    <span style="font-family:'VT323',monospace;font-size:22px;color:#e0d4b8">${escHtml(data.from || '—')}</span>`;
   document.body.appendChild(toFrom);
 
-  // Paper wrapper
+  // Paper wrapper + paper
   const wrapper = document.createElement('div');
   wrapper.style.cssText = 'padding:8px;background:#d4c5a0;border:4px solid #000;box-shadow:4px 4px 0 #000,inset 0 0 0 2px #b8a882;margin:0 16px 16px;max-width:100%;overflow:auto';
 
-  // Recreate the letter paper
   const paper = document.createElement('div');
-  const themeMap = {
-    default:'theme-default',night:'theme-night',marvel:'theme-marvel',nature:'theme-nature',
-    ocean:'theme-ocean',candy:'theme-candy',galaxy:'theme-galaxy',retro:'theme-retro',
-    pastel:'theme-pastel',parchment:'theme-parchment',sunset:'theme-sunset',mint:'theme-mint',
-    lavender:'theme-lavender',midnight:'theme-midnight',forest:'theme-forest',rose:'theme-rose',
-    arctic:'theme-arctic',lava:'theme-lava'
-  };
-  paper.className = 'letter-paper pixel-border ' + (themeMap[data.theme] || 'theme-default');
+  const themeClass = (THEMES.find(t => t.id === data.theme) || THEMES[0]).class;
+  paper.className = 'letter-paper pixel-border ' + themeClass;
 
   if (data.bgStyle) {
-    const tmpDiv = document.createElement('div');
-    tmpDiv.setAttribute('style', data.bgStyle);
+    const tmp = document.createElement('div');
+    tmp.setAttribute('style', data.bgStyle);
     ['background','backgroundColor','backgroundImage','backgroundSize','backgroundPosition'].forEach(p => {
-      if (tmpDiv.style[p]) paper.style[p] = tmpDiv.style[p];
+      if (tmp.style[p]) paper.style[p] = tmp.style[p];
     });
   }
-
   paper.style.width    = data.canvasW || '560px';
   paper.style.height   = data.canvasH || '460px';
   paper.style.position = 'relative';
   paper.style.overflow = 'hidden';
 
-  const BORDERS_RO = {
-    classic: {border:'4px solid #000', boxShadow:'0 0 0 4px #b8a882, 8px 8px 0 #000'},
-    gold:    {border:'4px solid #f9c22b', boxShadow:'0 0 0 4px #c49a1b, 8px 8px 0 #000'},
-    diamond: {border:'4px solid #5de8f0', boxShadow:'0 0 0 4px #2abccb, 8px 8px 0 #000'},
-    redstone:{border:'4px solid #e83232', boxShadow:'0 0 0 4px #8b1a1a, 8px 8px 0 #000'},
-    enchant: {border:'4px solid #9933ff', boxShadow:'0 0 0 4px #5a1a8b, 8px 8px 0 #000'},
-    dashed:  {border:'4px dashed #000',   boxShadow:'8px 8px 0 #000'},
-    double:  {border:'6px double #000',   boxShadow:'8px 8px 0 #000'},
-    none:    {border:'none',              boxShadow:'none'},
-  };
-  if (data.border && BORDERS_RO[data.border]) {
-    paper.style.border    = BORDERS_RO[data.border].border;
-    paper.style.boxShadow = BORDERS_RO[data.border].boxShadow;
+  if (data.border && BORDERS[data.border]) {
+    paper.style.border    = BORDERS[data.border].border;
+    paper.style.boxShadow = BORDERS[data.border].boxShadow;
   }
 
+  // Text content
   const tc = document.createElement('div');
   tc.style.cssText = 'position:absolute;top:0;left:0;right:0;bottom:0;z-index:2;line-height:1.4;word-break:break-word;white-space:pre-wrap;padding:24px;height:100%;overflow-y:auto;pointer-events:none';
   tc.innerHTML = data.textContent || '';
   paper.appendChild(tc);
 
+  // Stickers
   (data.stickers || []).forEach(s => {
     const el = document.createElement('div');
     if (s.type === 'image') {
-      el.style.cssText = `position:absolute;left:${s.left};top:${s.top};z-index:10;transform:rotate(${s.rotation||0}deg);transform-origin:center center`;
+      el.style.cssText = `position:absolute;left:${s.left};top:${s.top};z-index:10;transform:rotate(${parseFloat(s.rotation)||0}deg);transform-origin:center center`;
       const img = document.createElement('img');
       img.src = s.src;
       img.style.cssText = `display:block;width:${s.width||'80px'};height:${s.height||'auto'};max-width:none;pointer-events:none`;
       img.draggable = false;
       el.appendChild(img);
     } else {
-      const deg  = s.rotation || '0';
       const flip = s.flip === '1' ? ' scaleX(-1)' : '';
-      el.style.cssText = `position:absolute;left:${s.left};top:${s.top};z-index:10;transform:rotate(${deg}deg)${flip};transform-origin:center center`;
+      el.style.cssText = `position:absolute;left:${s.left};top:${s.top};z-index:10;transform:rotate(${parseFloat(s.rotation)||0}deg)${flip};transform-origin:center center`;
       const span = document.createElement('span');
       span.textContent = s.text;
       span.style.cssText = `font-size:${s.size||'32px'};line-height:1;display:block`;
@@ -2082,192 +2033,60 @@ function renderLetterView(data) {
   wrapper.appendChild(paper);
   document.body.appendChild(wrapper);
 
+  // Footer
   const footer = document.createElement('div');
   footer.style.cssText = 'display:flex;gap:10px;flex-wrap:wrap;justify-content:center;padding:0 16px 32px';
   footer.innerHTML = `
     <a href="${window.location.pathname}" style="font-family:'Press Start 2P',monospace;font-size:8px;color:#fff;background:#3d7a3d;padding:10px 14px;text-decoration:none;border:3px solid #000;box-shadow:4px 4px 0 #000">✏ WRITE YOUR OWN</a>
-    <button onclick="navigator.clipboard.writeText(location.href).then(()=>this.textContent='✓ COPIED!').catch(()=>{})" style="font-family:'Press Start 2P',monospace;font-size:8px;color:#2d1e0f;background:#c49a1b;padding:10px 14px;border:3px solid #000;box-shadow:4px 4px 0 #000;cursor:pointer">🔗 COPY LINK</button>`;
+    <button id="copyLinkBtn" onclick="navigator.clipboard.writeText(location.href).then(()=>{document.getElementById('copyLinkBtn').textContent='✓ COPIED!'}).catch(()=>{})"
+      style="font-family:'Press Start 2P',monospace;font-size:8px;color:#2d1e0f;background:#c49a1b;padding:10px 14px;border:3px solid #000;box-shadow:4px 4px 0 #000;cursor:pointer">
+      🔗 COPY LINK
+    </button>`;
   document.body.appendChild(footer);
-
-  const style = document.createElement('style');
-  style.textContent = `
-    .theme-default{background:#faf3dc}.theme-night{background:#0d0730;color:#c4b5fd}
-    .theme-marvel{background:#8b0000;color:#ffd700}.theme-nature{background:#e8f5e9}
-    .theme-ocean{background:#0077b6;color:#fff}.theme-candy{background:linear-gradient(135deg,#ffb3c6,#ffd6a5,#caffbf)}
-    .theme-galaxy{background:#0a0020;color:#e0c9ff}.theme-retro{background:#1a0000;color:#ff6600}
-    .theme-pastel{background:#fff0f5}.theme-parchment{background:#f5e6c8}
-    .theme-sunset{background:linear-gradient(135deg,#ff6b6b,#ffd93d,#ff8c42)}
-    .theme-mint{background:#d4f5e9}.theme-lavender{background:#e8d5f5}
-    .theme-midnight{background:#0a0a2e;color:#64ffda}.theme-forest{background:#1a3d1a;color:#a8ff78}
-    .theme-rose{background:linear-gradient(135deg,#fce4ec,#f8bbd9)}
-    .theme-arctic{background:linear-gradient(135deg,#e0f7fa,#b2ebf2,#e0f7fa)}
-    .theme-lava{background:linear-gradient(135deg,#1a0000,#3d0000);color:#ff4500}
-    .letter-paper{font-family:'Press Start 2P',monospace;flex-shrink:0}
-    .pixel-border{border:4px solid #000;box-shadow:0 0 0 4px #b8a882,8px 8px 0 #000}
-    *{box-sizing:border-box}
-  `;
-  document.head.appendChild(style);
 }
 
 function showLoadingScreen() {
-  document.body.innerHTML = '';
-  document.body.style.cssText = 'margin:0;padding:0;background:#1a0f05;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:\'Press Start 2P\',monospace;color:#f9c22b;text-align:center;padding:24px';
   document.body.innerHTML = `
-    <div style="font-size:clamp(16px,3vw,28px);text-shadow:4px 4px 0 #c49a1b">✉ PixelWish ✉</div>
-    <div style="margin-top:24px;font-size:10px;color:#a0d8a0;animation:blink 1s step-end infinite">Opening your letter...</div>
-    <style>@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}</style>`;
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;font-family:'Press Start 2P',monospace;color:#f9c22b;text-align:center;padding:24px;background:#1a0f05">
+      <div style="font-size:clamp(16px,3vw,28px);text-shadow:4px 4px 0 #c49a1b">✉ PixelLetter ✉</div>
+      <div style="margin-top:24px;font-size:10px;color:#a0d8a0;animation:blink 1s step-end infinite">Opening your letter...</div>
+      <style>@keyframes blink{0%,100%{opacity:1}50%{opacity:0}}</style>
+    </div>`;
 }
 
 function showErrorScreen(msg) {
-  document.body.innerHTML = '';
-  document.body.style.cssText = 'margin:0;padding:0;background:#1a0f05;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;font-family:\'Press Start 2P\',monospace;color:#f9c22b;text-align:center;padding:24px';
   document.body.innerHTML = `
-    <div style="font-size:clamp(16px,3vw,28px);text-shadow:4px 4px 0 #c49a1b">✉ PixelWish ✉</div>
-    <div style="margin-top:24px;font-size:11px;color:#e83232">Letter not found!</div>
-    <div style="margin-top:12px;font-size:7px;color:#a09070;line-height:2.2;max-width:400px">${msg}</div>
-    <a href="${window.location.pathname}" style="margin-top:24px;font-family:'Press Start 2P',monospace;font-size:8px;color:#fff;background:#3d7a3d;padding:10px 16px;text-decoration:none;border:3px solid #000;box-shadow:4px 4px 0 #000">✏ CREATE NEW LETTER</a>`;
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;min-height:100vh;font-family:'Press Start 2P',monospace;color:#f9c22b;text-align:center;padding:24px;background:#1a0f05">
+      <div style="font-size:clamp(16px,3vw,28px);text-shadow:4px 4px 0 #c49a1b">✉ PixelLetter ✉</div>
+      <div style="margin-top:24px;font-size:11px;color:#e83232">Oops!</div>
+      <div style="margin-top:12px;font-size:7px;color:#a09070;line-height:2.2;max-width:380px">${msg}</div>
+      <a href="${window.location.pathname}" style="margin-top:24px;font-family:'Press Start 2P',monospace;font-size:8px;color:#fff;background:#3d7a3d;padding:10px 16px;text-decoration:none;border:3px solid #000;box-shadow:4px 4px 0 #000">✏ CREATE NEW LETTER</a>
+    </div>`;
 }
 
 function loadFromId() {
-  const params = new URLSearchParams(window.location.search);
-  const id = params.get('id');
+  const id = new URLSearchParams(window.location.search).get('id');
   if (!id) return;
-
   showLoadingScreen();
 
-  fetchLetter(id).then(data => {
-    renderLetterView(data);
-  }).catch(err => {
-    console.error('Load error:', err);
-    showErrorScreen(
-      'This letter could not be loaded.<br><br>' +
-      'It may have expired, or the API key in the app needs to be set up.<br><br>' +
-      'See the setup instructions in the code comments.'
-    );
-  });
-}
-
-// ── Legacy hash loader (backward compat with old #wish= links) ──
-function loadFromHash() {
-  const hash = window.location.hash;
-  if (!hash.startsWith('#wish=')) return;
-  try {
-    const encoded = hash.slice(6);
-    const data = JSON.parse(decodeURIComponent(escape(atob(encoded))));
-    document.getElementById('toField').value = data.to || '';
-    document.getElementById('fromField').value = data.from || '';
-    document.getElementById('textContent').innerHTML = data.textContent || '';
-    if (data.theme) {
-      const t = THEMES.find(x => x.id === data.theme);
-      if (t) setTheme(data.theme, t.class);
-    }
-    if (data.border) setBorder(data.border);
-    if (data.stickers) {
-      data.stickers.forEach(s => {
-        const paper = document.getElementById('letterPaper');
-        const el = document.createElement('div');
-        el.className = 'letter-sticker';
-        el.dataset.rotation = s.rotation || '0';
-        el.dataset.flip = s.flip || '0';
-        const span = document.createElement('span');
-        span.textContent = s.text;
-        span.style.fontSize = s.size;
-        span.style.display = 'block';
-        el.appendChild(span);
-        el.style.left = s.left; el.style.top = s.top;
-        applyTransform(el);
-        const del = document.createElement('button');
-        del.className = 'del-btn'; del.textContent = '×';
-        del.onclick = (e) => { e.stopPropagation(); el.remove(); };
-        el.appendChild(del);
-        const rotHandle = document.createElement('div');
-        rotHandle.className = 'rotate-handle';
-        rotHandle.title = 'Drag to rotate';
-        el.appendChild(rotHandle);
-        attachRotateHandle(rotHandle, el);
-        el.addEventListener('mousedown', (e) => { if(e.target===del||e.target===rotHandle)return; selectSticker(el); startDrag(e); });
-        el.addEventListener('touchstart', (e) => { if(e.target===del||e.target===rotHandle)return; selectSticker(el); startDrag(e); }, {passive:false});
-        paper.appendChild(el);
-      });
-    }
-    shareLink = window.location.href;
-    showNotif('Letter loaded! ✨');
-    showPreview();
-  } catch(e) {
-    showNotif('Could not load letter from link.', true);
-  }
-}
-
-// ═══════════════════════════════════════════
-//  DRAG-TO-ROTATE (Canva-style handle)
-// ═══════════════════════════════════════════
-function attachRotateHandle(handle, stickerEl) {
-  function getAngle(cx, cy, ex, ey) {
-    return Math.atan2(ey - cy, ex - cx) * 180 / Math.PI;
+  if (SUPABASE_URL === 'YOUR_SUPABASE_PROJECT_URL') {
+    showErrorScreen('Supabase is not configured yet.<br><br>Open the HTML file and follow the 5-step setup instructions in the code comments near the top of the &lt;script&gt; block.');
+    return;
   }
 
-  function onRotateStart(e) {
-    e.stopPropagation();
-    e.preventDefault();
-    selectSticker(stickerEl);
-
-    const paper = document.getElementById('letterPaper');
-    const rect = stickerEl.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
-    const startClient = e.touches ? e.touches[0] : e;
-    const startAngle = getAngle(cx, cy, startClient.clientX, startClient.clientY);
-    const startRot = parseFloat(stickerEl.dataset.rotation || '0');
-
-    function onMove(ev) {
-      ev.preventDefault();
-      const client = ev.touches ? ev.touches[0] : ev;
-      // Recalculate center (may have moved)
-      const r2 = stickerEl.getBoundingClientRect();
-      const cx2 = r2.left + r2.width / 2;
-      const cy2 = r2.top + r2.height / 2;
-      const curAngle = getAngle(cx2, cy2, client.clientX, client.clientY);
-      let newRot = startRot + (curAngle - startAngle);
-      // Snap to 45° increments when holding Shift
-      if (ev.shiftKey) newRot = Math.round(newRot / 45) * 45;
-      newRot = ((newRot % 360) + 360) % 360;
-      stickerEl.dataset.rotation = newRot;
-      applyTransform(stickerEl);
-      // Sync slider
-      document.getElementById('stickerRotation').value = Math.round(newRot);
-      document.getElementById('rotationVal').textContent = Math.round(newRot) + '°';
-    }
-
-    function onEnd() {
-      document.removeEventListener('mousemove', onMove);
-      document.removeEventListener('mouseup', onEnd);
-      document.removeEventListener('touchmove', onMove);
-      document.removeEventListener('touchend', onEnd);
-    }
-
-    document.addEventListener('mousemove', onMove);
-    document.addEventListener('mouseup', onEnd);
-    document.addEventListener('touchmove', onMove, {passive:false});
-    document.addEventListener('touchend', onEnd);
-  }
-
-  handle.addEventListener('mousedown', onRotateStart);
-  handle.addEventListener('touchstart', onRotateStart, {passive:false});
+  fetchLetter(id)
+    .then(data => renderLetterView(data))
+    .catch(err => {
+      console.error('Load error:', err);
+      showErrorScreen('This letter could not be loaded.<br><br>' + escHtml(err.message));
+    });
 }
 
 // ── Entry point ──
-// If there's a ?id= param, render the read-only letter view and stop.
-// Otherwise boot the full editor (and also support legacy #wish= links).
 if (new URLSearchParams(window.location.search).get('id')) {
-  // Inject Google Fonts so the read-only view looks right
-  const link = document.createElement('link');
-  link.rel = 'stylesheet';
-  link.href = 'https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323:wght@400&family=Pixelify+Sans:wght@400;700&family=Orbitron:wght@400;700&family=Space+Mono:wght@400;700&family=Courier+Prime:wght@400;700&family=Josefin+Sans:wght@400;700&family=Playfair+Display:wght@400;700&family=Abril+Fatface&family=Permanent+Marker&family=Caveat:wght@400;700&family=Dancing+Script:wght@400;700&family=Creepster&family=Righteous&display=swap';
-  document.head.appendChild(link);
   loadFromId();
 } else {
   init();
-  loadFromHash(); // backward compat with old #wish= links
 }
 </script>
 </body>
